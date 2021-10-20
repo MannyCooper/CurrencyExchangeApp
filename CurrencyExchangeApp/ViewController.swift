@@ -12,15 +12,15 @@ import Alamofire
 import PromiseKit
 
 class ViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDelegate {
-            
     
-    let baseURL = "http://api.exchangeratesapi.io/v1/latest"
+    
+    let baseURL = "http://api.exchangeratesapi.io/v1/"
     let apiKey = "729c96fade601362151c7e0cd8463761"
     
-    let currenciesArray = ["USD","CNY","EUR","GBP","AUD","JPY","CAD","TWD","HKD","RUB"]
-        
-    var fromCurrency: String = ""
-    var toCurrency: String = ""
+    var currenciesArray = ["USD","CNY","EUR","GBP","AUD","JPY","CAD","TWD","HKD","RUB"]
+    
+    var fromCurrency: String = "USD"
+    var toCurrency: String = "CNY"
     
     @IBOutlet weak var fromCurrencyPicker: UIPickerView!
     @IBOutlet weak var toCurrencyPicker: UIPickerView!
@@ -30,11 +30,28 @@ class ViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDele
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
-        
-        fromCurrency = currenciesArray[3]
-        toCurrency = currenciesArray[4]
-        fromCurrencyPicker.selectRow(3, inComponent:0, animated:true)
-        toCurrencyPicker.selectRow(4, inComponent:0, animated:true)
+                                
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        getAllCurrencies()
+            .done { getAllCurrencies in
+                self.currenciesArray = getAllCurrencies
+                self.fromCurrencyPicker.reloadAllComponents()
+                self.toCurrencyPicker.reloadAllComponents()
+                
+                if let fromIndex = self.currenciesArray.firstIndex(of: self.fromCurrency) {
+                    print(fromIndex)
+                    self.fromCurrencyPicker.selectRow(fromIndex, inComponent:0, animated:false)
+                }
+                if let toIndex = self.currenciesArray.firstIndex(of: self.toCurrency) {
+                    self.toCurrencyPicker.selectRow(toIndex, inComponent:0, animated:false)
+                }
+            }
+            .catch { _ in
+                self.fromCurrencyPicker.selectRow(3, inComponent:0, animated:true)
+                self.toCurrencyPicker.selectRow(4, inComponent:0, animated:true)
+            }
     }
     
     
@@ -43,11 +60,11 @@ class ViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDele
     func numberOfComponents(in pickerView: UIPickerView) -> Int {
         return 1
     }
-
+    
     func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
         return currenciesArray.count
     }
-
+    
     func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
         return currenciesArray[row]
     }
@@ -64,19 +81,26 @@ class ViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDele
     //    Networking
     
     func getExchangeRate(_ fromCurrency: String, _ toCurrency: String) -> Promise<(Float,Float)>{
+        
+        SwiftSpinner.show("Fetching data...")
+        
         return Promise<(Float,Float)>{seal -> Void in
             
-            let url = baseURL + "?access_key=" + apiKey + "&symbols=" + fromCurrency + "," + toCurrency
+            let url = baseURL + "latest?access_key=" + apiKey + "&symbols=" + fromCurrency + "," + toCurrency
             
             AF.request(url).responseJSON { response in
                 switch response.result {
                 case .success(let success):
+                    SwiftSpinner.hide()
                     let rates = JSON(success)["rates"]
                     let fromCurrencyRate = rates[fromCurrency].floatValue
                     let toCurrencyRate = rates[toCurrency].floatValue
                     seal.fulfill((fromCurrencyRate, toCurrencyRate))
                     
                 case .failure(let error):
+                    SwiftSpinner.show("Failed", animated: false).addTapHandler({
+                        SwiftSpinner.hide()
+                    }, subtitle: "Tap to hide.")
                     print("error")
                     seal.reject(error)
                 }
@@ -86,21 +110,45 @@ class ViewController: UIViewController, UIPickerViewDataSource, UIPickerViewDele
         }
     }
     
+    func getAllCurrencies() -> Promise<Array<String>>{
+        SwiftSpinner.show("Fetching currencies list...")
+        
+        return Promise<Array<String>>{seal -> Void in
+            
+            let url = baseURL + "symbols?access_key=" + apiKey
+            
+            AF.request(url).responseJSON { response in
+                switch response.result {
+                case .success(let success):
+                    SwiftSpinner.hide()
+                    let currenciesArray = JSON(success)["symbols"].dictionaryValue.keys.sorted()
+                    seal.fulfill(currenciesArray)
+                    
+                case .failure(let error):
+                    print(error)
+                    SwiftSpinner.show("Failed to fetch currencies list, using local list.", animated: false).addTapHandler({
+                        SwiftSpinner.hide()
+                    }, subtitle: "Tap to hide.")
+                    seal.reject(error)
+                }
+                
+            }
+            
+        }
+    }
+    
     // Get Exchange Rate
+    
     @IBAction func getExchangeRate(_ sender: Any) {
         if fromCurrency == "" || toCurrency == ""{
             return
         }
-        SwiftSpinner.show("Fetching Data...")
         getExchangeRate(fromCurrency, toCurrency)
             .done { fromCurrencyRate, toCurrencyRate in
                 self.lblResult.text = "1 \(self.fromCurrency) = \(toCurrencyRate/fromCurrencyRate) \(self.toCurrency)"
-                SwiftSpinner.hide()
+                
             }
             .catch { error in
-                SwiftSpinner.show("Failed", animated: false).addTapHandler({
-                    SwiftSpinner.hide()
-                  }, subtitle: "Tap to hide.")
                 print(error)
             }
     }
